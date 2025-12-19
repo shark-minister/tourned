@@ -1,17 +1,947 @@
-<!DOCTYPE html>
-<html lang="">
+<!--
+    © 2025  @shark_minister
+    Released under the MIT License, see accompaying LICENSE.txt.
+-->
+<html>
   <head>
-    <meta charset="UTF-8">
-    <link rel="icon" href="/favicon.ico">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BEY-TREC - BEYBLADE X Tournament Recorder</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Tournament Editor</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="/assets/index-L6LdQQp3.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-FVsbg_fO.css">
   </head>
   <body id="body">
-    <div id="app"></div>
+
+    <!-- for Vue Mount -->
+    <div id="app" v-cloak>
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          メニュー
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <header id="menu">
+        <!-- タイトル -->
+        <div id="title">BEYBLADE X Tournament Editor</div>
+        <!-- メニューアイコン -->
+        <input type="checkbox" id="hamburger-body" v-model="menu_visible"
+               @change="on_menu()" hidden />
+        <label id="hamburger-icon" for="hamburger-body">
+          <span></span>
+          <span></span>
+          <span></span>
+        </label>
+        <div class="overlay" @click="close_menu()"></div>
+
+        <div id="menu-list">
+          <a class="menu-item" href="#" @click="open_dlg_new()">
+            {{ is_eng ? "New" : "新規作成" }}
+          </a>
+          <hr />
+          <a class="menu-item" href="#" @click="open_dlg_load()">
+            {{ is_eng ? "Load from Storage" : "ストレージから読み込み" }}
+          </a>
+          <a class="menu-item" href="#" @click="open_dlg_save()">
+            {{ is_eng ? "Save to Storage" : "ストレージへ保存" }}
+          </a>
+          <a class="menu-item" href="#" @click="open_dlg_remove()">
+            {{ is_eng ? "Remove Data" : "ストレージを削除" }}
+          </a>
+          <hr />
+          <a class="menu-item" href="#" @click="open_dlg_import()">
+            {{ is_eng ? "Import File" : "ファイルの取り込み" }}
+          </a>
+          <a class="menu-item" href="#" @click="open_dlg_export()">
+            {{ is_eng ? "Export File" : "ファイルの書き出し" }}
+          </a>
+          <hr />
+          <div class="menu-item">
+            {{ is_eng ? "Language" : "言語" }}
+            <select v-model="is_eng" class="lang-select" @change="change_lang()">
+              <option :value="false">日本語</option>
+              <option :value="true">English</option>
+            </select>
+          </div>
+        </div>
+      </header>
+
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          メイン画面
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <template v-if="view === 1">
+        <div v-show="rounds.length > 0" class="content-wrapper">
+          <!-- 大会情報 -->
+          <table id="event-info">
+            <tr>
+              <td class="event-info-header">
+                {{ is_eng ? "Date" : "日付" }}
+              </td>
+              <td><input type="date" v-model="date" /></td>
+            </tr>
+            <tr>
+              <td class="event-info-header">
+                {{ is_eng ? "Title" : "大会名" }}
+              </td>
+              <td><input type="text" v-model="title" /></td>
+            </tr>
+            <tr>
+              <td class="event-info-header">
+                {{ is_eng ? "Your No." : "自分の番号" }}
+              </td>
+              <td>
+                <input type="number" v-model="my_number" min="0" @change="set_my_entry" />
+              </td>
+            </tr>
+          </table>
+
+          <!-- 対戦表 -->
+          <template v-for="(round, r_index) in rounds">
+            <!-- ラウンド毎に記述 -->
+            <details class="round-details" :open="r_index === 0">
+              <!-- 見出し -->
+              <summary>{{ is_eng ? ("Round " + round.round) : (round.round + "回戦") }}</summary>
+              <!-- 対戦表コンテナ -->
+              <div class="round-container">
+                <!-- 各対戦 -->
+                <div v-for="m in round.matches" class="match-in-round">
+                  <!-- ブレーダー・ベイ情報 -->
+                  <template v-for="(s, i) in m.sides">
+                    <div :class="[`match-side${i}`, s.number() === my_number ? 'highlight' : '', (m.winner && m.winner.id() !== s.id()) ? 'loser' : '']"
+                        @click="open_dlg_history(s)">
+                      <div class="entry-number">{{ s.number() }}</div>
+                      <div :class="{'blader-name': true, winner: m.is_winner(s.id())}">{{ s.name() }}</div>
+                      <div class="used-bey">
+                        {{ s.bey.blade_name(is_eng) }}<br />
+                        {{ s.bey.ratchet_name() }} {{ s.bey.bit_name() }}
+                        <div class="finish-in-round">
+                          <div v-for="f in m.finishes(i)" :class="f">{{ f }}</div>                 
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                  <!-- スコア -->
+                  <div class="match-score">
+                    <div class="next-match">
+                      <img :src="'res/next' + m.is_next_match(target_matches1, target_matches2) + '.png'" />
+                    </div>
+                    <button @click="open_dlg_match(m)" :disabled="m.condition() <= 0">
+                      {{ m.score1 }} &minus; {{ m.score2 }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </template>
+        </div>
+
+        <div v-show="rounds.length === 0" class="content-wrapper">
+          <button @click="open_dlg_new()" class="initial-button">
+            {{ is_eng ? "New" : "新規作成" }}
+          </button>
+          <button @click="open_dlg_load()" class="initial-button">
+            {{ is_eng ? "Load" : "ストレージから読み込み" }}
+          </button>
+          <button @click="open_dlg_import()" class="initial-button">
+            {{ is_eng ? "Import File" : "ファイル取り込み" }}
+          </button>
+        </div>
+      </template>
+
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          統計画面
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <template v-else-if="view === 2">
+        ここに統計情報を書く
+      </template>
+
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          新規作成ダイアログ
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <dialog id="dlg_new" ref="dlg_new" class="dlg-frame">
+        <div class="dlg-header-wrapper">
+          <div class="dlg-header">
+            <div>{{ is_eng ? "Create new tournament" : "新しいトーナメントの作成" }}</div>
+            <button @click="close_dlg_new(false)">&times;</button>            
+          </div>
+        </div>
+        <div class="dlg-body">
+
+          <div class="ctrl-item-wapper">
+            <div class="ctrl-item">
+              {{ is_eng ? "Num. Entries" : "大会人数" }}
+              <!-- <select v-model="num_rounds" class="select-rounds"> -->
+              <select id="num_rounds" class="select-rounds">
+                <option v-for="opt in opt_rounds" :value="opt.value">
+                  {{ is_eng ? opt.label_en : opt.label_ja }}
+                </option>
+              </select>
+            </div>
+            <div class="ctrl-item">
+              <label>
+                <input type="checkbox" id="seq_num" checked />
+                {{ is_eng ? "Assign consecutive entry numbers" : "エントリー番号を連番にする" }}
+              </label>               
+            </div>
+          </div>
+
+          <div class="dlg-buttons">
+            <button @click="close_dlg_new(true)">
+              {{ is_eng ? "Create tournament" : "トーナメントを作成" }}
+            </button>
+          </div>
+        </div>
+      </dialog>
+
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          ファイル入力ダイアログ
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <dialog id="dlg_import" ref="dlg_import" class="dlg-frame">
+        <div class="dlg-header-wrapper">
+          <div class="dlg-header">
+            <div>{{ is_eng ? 'Import File' : "ファイル取り込み" }}</div>
+            <button @click="close_dlg_import(false)">&times;</button>         
+          </div>
+        </div>
+        <div class="dlg-body">
+          <div class="ctrl-item-wapper">
+            <div class="ctrl-item">
+              <input name="imp_file" type="file" @change="set_ifile"/>
+            </div>
+          </div>
+          <div class="dlg-buttons">
+            <button @click="close_dlg_import(true)">
+              {{ is_eng ? "Upload" : "アップロード" }}
+            </button>
+          </div>
+        </div>
+      </dialog>
+
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          ファイル出力ダイアログ
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <dialog id="dlg_export" ref="dlg_export" class="dlg-frame">
+        <div class="dlg-header-wrapper">
+          <div class="dlg-header">
+            {{ is_eng ? 'Export File' : "ファイル書き出し" }}
+            <button @click="close_dlg_export(false)">&times;</button>    
+          </div>
+        </div>
+        <div class="dlg-body">
+          <div class="dlg-buttons">
+            <button @click="close_dlg_export(true)">
+              {{ is_eng ? "Download" : "ダウンロード" }}
+            </button>
+          </div>
+        </div>
+      </dialog>
+
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          復元ダイアログ
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <dialog id="dlg_load" ref="dlg_load" class="dlg-frame">
+        <div class="dlg-header-wrapper">
+          <div class="dlg-header">
+            <div>{{ is_eng ? 'Load from local storage' : "ストレージから読み込み" }}</div>
+            <button @click="close_dlg_load(false)">&times;</button>      
+          </div>
+        </div>
+
+        <div class="dlg-body">
+
+          <div class="ctrl-item-wapper">
+            <div class="ctrl-item">
+              <select v-model="key_in_storage" class="key-list">
+                <option v-for="key in key_list" :value="key">
+                  {{ key }}
+                </option>
+              </select> 
+            </div>
+          </div>
+
+          <div class="dlg-buttons">
+            <button @click="close_dlg_load(true)" :disabled="key_list.length === 0">
+              {{ is_eng ? "Load" : "読み込み" }}
+            </button>
+          </div>
+        </div>
+      </dialog>
+
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          保存ダイアログ
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <dialog id="dlg_save" ref="dlg_save" class="dlg-frame">
+        <div class="dlg-header-wrapper">
+          <div class="dlg-header">
+            <div>{{ is_eng ? 'Save to local storage' : "ストレージへ保存" }}</div>
+            <button @click="close_dlg_save(false)">&times;</button> 
+          </div>
+        </div>
+
+        <div class="dlg-body">
+          <div class="ctrl-item-wapper">
+            <div class="ctrl-item">
+              {{ is_eng ? 'name' : '名前' }}
+              <input type="text" v-model="key_in_storage" />      
+            </div>
+          </div>
+
+          <div class="dlg-buttons">
+            <button @click="close_dlg_save(false)">
+              {{ is_eng ? "Cancel" : "キャンセル" }}
+            </button>
+            <button @click="close_dlg_save(true)" :disabled="key_in_storage.length === 0">
+              {{ is_eng ? "Save" : "保存" }}
+            </button>
+          </div>
+        </div>
+      </dialog>
+
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          ストレージ削除ダイアログ
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <dialog id="dlg_remove" ref="dlg_remove" class="dlg-frame">
+        <div class="dlg-header-wrapper">
+          <div class="dlg-header">
+            <div>{{ is_eng ? 'Remove data in local storage' : "ストレージのデータ削除" }}</div>
+            <button @click="close_dlg_remove()">&times;</button>
+          </div>
+        </div>
+
+        <div class="dlg-body">
+
+          <div class="ctrl-item-wapper">
+            <div class="ctrl-item">
+              <select v-model="key_in_storage" class="key-list">
+                <option v-for="key in key_list" :value="key">
+                  {{ key }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div class="dlg-buttons">
+            <button @click="remove_storage()" :disabled="key_in_storage.length === 0">
+              {{ is_eng ? "Remove" : "選択したデータを削除" }}
+            </button>
+            <button @click="clear_storage()" :disabled="key_list.length === 0">
+              {{ is_eng ? "Clear all" : "すべてのデータを削除" }}
+            </button>
+          </div>
+        </div>
+      </dialog>
+
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          試合を編集するダイアログ
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <dialog id="dlg_match" ref="dlg_match" class="dlg-frame">
+        <div class="dlg-header-wrapper">
+          <div class="dlg-header">
+            <div>
+              {{ is_eng ? ("Round " + cur_match.round) : (cur_match.round + "回戦") }}
+              &nbsp;&minus;&nbsp;
+              {{ is_eng ? ("Match " + cur_match.order) : ("第" + cur_match.order + "試合") }}            
+            </div>
+            <div class="battle-style-btn">
+              <label class="toggle-btn">
+                <input type="radio" name="battle-style" v-model="cur_match.is_3on3" :value="false" />
+                1 BEY
+              </label>
+              <label class="toggle-btn">
+                <input type="radio" name="battle-style" v-model="cur_match.is_3on3" :value="true" />
+                3 ON 3
+              </label>
+            </div>
+            <button @click="close_dlg_match()">&times;</button>
+          </div>
+        </div>
+        <div class="dlg-body">
+          <!-- 情報1 -->
+          <div class="match-info1">
+            <div class="side1-header">
+              <div class="number-in-match">
+                <div>#</div>
+                <input type="number" class="outfocus" min="0"
+                       v-model="cur_match.side1.entry.number" />
+              </div>
+              <div>{{ cur_match.side1.position() }}</div>
+            </div>
+            <div class="swap-position">
+              <button @click="swap_position()">&hArr;</button>
+            </div>
+            <div class="side2-header">
+              <div>{{ cur_match.side2.position() }}</div>
+              <div class="number-in-match">
+                <div>#</div>
+                <input type="number" class="outfocus" min="0"
+                       v-model="cur_match.side2.entry.number" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 情報2 -->
+          <div class="match-info2" :class="cur_match.is_3on3 ? 'mi2-3on3' : 'mi2-1bey'">
+            <template v-for="(side, i) in cur_match.sides">
+              <!-- ブレーダー名 -->
+              <div class="blader-in-match" :class="'side-in-match'+(i+1)">
+                <input type="text" class="outfocus" v-model="side.entry.name"
+                       :placeholder="is_eng ? 'blader name' : 'ブレーダー名'"/>
+              </div>
+              <!-- 使用するベイブレード -->
+              <div class="bey-in-match input" :class="'side-in-match'+(i+1)"
+                   @click="open_dlg_beyed(side)">
+                <div class="bey-placeholder">
+                  {{ is_eng ? "tap here" : "タップして" }}<br />
+                  {{ is_eng ? "to edit bayblade" : "ベイを編集する" }}
+                </div>
+                {{ side.beys(cur_bey_index).blade_name(is_eng) }}<br />
+                {{ side.beys(cur_bey_index).ratchet_name() }}<br />
+                {{ side.beys(cur_bey_index).bit_name() }}
+              </div>
+            </template>
+            <!-- 3on3のベイスイッチ -->
+            <div v-if="cur_match.is_3on3" class="bey-switches">
+              <label class="bey-switch">
+                <input type="radio" name="beysw" v-model="cur_bey_index" :value="0"/>
+                A
+              </label>
+              <label class="bey-switch">
+                <input type="radio" name="beysw" v-model="cur_bey_index" :value="1" />
+                B
+              </label>
+              <label class="bey-switch">
+                <input type="radio" name="beysw" v-model="cur_bey_index" :value="2" />
+                C
+              </label>
+            </div>
+          </div>
+
+          <!-- 情報3 -->
+          <div class="match-info3">
+            <div :class="{'score-side1': true, yellow: cur_match.condition() === 10}">
+              {{ cur_match.score1 }}
+            </div>
+            <div class="hyphen">&minus;</div>
+            <div :class="{'score-side2': true, yellow: cur_match.condition() === 20}">
+              {{ cur_match.score2 }}
+            </div>
+          </div>
+
+          <!-- 情報4 -->
+          <div class="match-info4" :class="cur_match.is_3on3 ? 'mi4-3on3' : 'mi4-1bey'">
+            <template v-for="(b, i) in cur_match.battles">
+              <!-------- ブレーダー1 -------->
+              <!-- エクストリーム -->
+              <div class="finish-item f1xf" :class="'row'+(i+1)">
+                <input type="radio" :name="(cur_match.id << 4) | i"
+                  class="xf" v-model="b.f_code" :id="'xf1'+i" :value="0x04" />
+                <label :for="'xf1'+i">XF</label>
+              </div>
+              <!-- バースト -->
+              <div class="finish-item f1bf" :class="'row'+(i+1)">
+                <input type="radio" :name="(cur_match.id << 4) | i"
+                  class="bf" v-model="b.f_code" :id="'bf1'+i" :value="0x03" />
+                <label :for="'bf1'+i">BF</label>
+              </div>
+              <!-- オーバー -->
+              <div class="finish-item f1of" :class="'row'+(i+1)">
+                <input type="radio" :name="(cur_match.id << 4) | i"
+                  class="of" v-model="b.f_code" :id="'of1'+i" :value="0x02" />
+                <label :for="'of1'+i">OF</label>
+              </div>
+              <!-- スピン -->
+              <div class="finish-item f1sf" :class="'row'+(i+1)">
+                <input type="radio" :name="(cur_match.id << 4) | i"
+                  class="sf" v-model="b.f_code" :id="'sf1'+i" :value="0x01" />
+                <label :for="'sf1'+i">SF</label>
+              </div>
+              <!-------- ブレーダー1 -------->
+              <!-- スピン -->
+              <div class="finish-item f2sf" :class="'row'+(i+1)">
+                <input type="radio" :name="(cur_match.id << 4) | i"
+                  class="sf" v-model="b.f_code" :id="'sf2'+i" :value="0x11" />
+                <label :for="'sf2'+i">SF</label>
+              </div>
+              <!-- オーバー -->
+              <div class="finish-item f2of" :class="'row'+(i+1)">
+                <input type="radio" :name="(cur_match.id << 4) | i"
+                  class="of" v-model="b.f_code" :id="'of2'+i" :value="0x12" />
+                <label :for="'of2'+i">OF</label>
+              </div>
+              <!-- バースト -->
+              <div class="finish-item f2bf" :class="'row'+(i+1)">
+                <input type="radio" :name="(cur_match.id << 4) | i"
+                  class="bf" v-model="b.f_code" :id="'bf2'+i" :value="0x13" />
+                <label :for="'bf2'+i">BF</label>
+              </div>
+                <!-- エクストリーム -->
+              <div class="finish-item f2xf" :class="'row'+(i+1)">
+                <input type="radio" :name="(cur_match.id << 4) | i"
+                  class="xf" v-model="b.f_code" :id="'xf2'+i" :value="0x14" />
+                <label :for="'xf2'+i">XF</label>
+              </div>
+            </template>
+            <!-- バトル番号のボタン -->
+            <template v-for="i in 7">
+              <div class="battle-number fbn" :class="'row'+i">
+                <button @click="update_finish_buttons(i)"
+                        :disabled="cur_match.battles.length < (i-1)">
+                  {{ i }}
+                  <span>
+                    {{ cur_match.battles.length <= (i-1) ? "+" : "&minus;" }}
+                  </span>
+                </button>
+              </div>
+            </template>
+            <!-- 3on3のベイ-->
+            <template v-if="cur_match.is_3on3">
+              <!-- 3rdベイまでは固定 -->
+              <div class="bey1 row1">A</div><div class="bey2 row1">A</div>
+              <div class="bey1 row2">B</div><div class="bey2 row2">B</div>
+              <div class="bey1 row3">C</div><div class="bey2 row3">C</div>
+              <template v-for="i in [4, 5, 6, 7]">
+                <template v-if="cur_match.is_3on3 && cur_match.battles.length >= i">
+                  <div class="bey1" :class="'row'+i">{{ cur_match.battles[i-1].bey1_symbol() }}</div>
+                  <div class="bey2" :class="'row'+i">{{ cur_match.battles[i-1].bey2_symbol() }}</div>
+                </template>
+              </template>
+            </template>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog id="dlg_3on3" ref="dlg_3on3" class="dlg-frame">
+        <div class="dlg-header-wrapper">
+          <div class="dlg-header">
+            <div>
+              {{ is_eng ? "Select Bey" : "ベイを選択" }}
+            </div>
+            <button @click="close_dlg_3on3()">&times;</button>
+          </div>
+        </div>
+        <div v-if="cur_battle !== null && cur_match.is_3on3" class="dlg-body">
+          <div>
+            No.{{ cur_match.side1.entry.number }} &minus; 
+            {{ cur_match.side1.entry.name }}
+          </div>
+          <select v-model="cur_battle.bey1">
+            <option v-for="i in [0, 1, 2]" :value="i">
+              {{ bey_3on3_symbols[i] }}: {{ cur_match.side1.beys(i).name(is_eng) }}
+            </option>
+          </select>
+          <div>
+            No.{{ cur_match.side2.entry.number }} &minus; 
+            {{ cur_match.side2.entry.name }}
+          </div>
+          <select v-model="cur_battle.bey2">
+            <option v-for="i in [0, 1, 2]" :value="i">
+              {{ bey_3on3_symbols[i] }}: {{ cur_match.side2.beys(i).name(is_eng) }}
+            </option>
+          </select>
+        </div>
+      </dialog>
+      
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          ベイブレードを編集するダイアログ
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <dialog id="dlg_beyed" ref="dlg_beyed" class="dlg-frame">
+        <div class="dlg-header-wrapper">
+          <div class="dlg-header">
+            <div>
+              #{{ cur_side.entry.number }}: {{ cur_bey.name(is_eng) }}
+            </div>
+            <button @click="close_dlg_beyed()">&times;</button>
+          </div>
+        </div>
+        <div class="dlg-body">
+          <!-- タブ -->
+          <ul class="tabs-beyed">
+            <li @click="show_page_beyed(1)" :class="css_class_tab_beyed(1)">
+              {{ is_eng ? "Blade" : "ブレード" }}
+            </li>
+            <li @click="show_page_beyed(2)" :class="css_class_tab_beyed(2)">
+              {{ is_eng ? "Ratchet" : "ラチェット" }}
+            </li>
+            <li @click="show_page_beyed(3)" :class="css_class_tab_beyed(3)">
+              {{ is_eng ? "Bit" : "ビット" }}
+            </li>
+          </ul>
+          <!-------------------------------------------------------------------
+            ブレード編集画面
+          --------------------------------------------------------------------->
+          <div v-show="page_beyed == 1" class="content-beyed page-blade">
+
+            <!-- 左ペイン -->
+            <div class="menu-beyed">
+              <!-- 一覧表示 -->
+              <h4>{{ is_eng ? "List" : "一覧" }}</h4>
+              <select v-model="blade_all">
+                <option :value="true">{{ is_eng ? "All" : "すべて" }}</option>
+                <option :value="false">{{ is_eng ? "History" : "履歴" }}</option>
+              </select>
+
+              <!-- BX/UX/CX -->
+              <h4>{{ is_eng ? "Series" : "シリーズ" }}</h4>
+              <select v-model="cur_bey.is_cx" :disabled="!blade_all">
+                <option :value="false">BX/UX</option>
+                <option :value="true">CX</option>
+              </select>
+
+              <!-- タイプで絞り込み -->
+              <h4>{{ is_eng ? "Type" : "タイプ" }}</h4>
+              <label v-for="t in types">
+                <input type="checkbox" v-model="blade_type" :value="t.value" :disabled="!blade_all" />
+                {{ is_eng ? t.label_en : t.label_ja }}
+              </label>
+
+              <!-- カテゴリーで絞り込み -->
+              <h4>{{ is_eng ? "Category" : "カテゴリ" }}</h4>
+              <label v-for="c in blade_categs">
+                <input type="checkbox" v-model="blade_categ" :value="c.value" :disabled="!blade_all" />
+                {{ is_eng ? c.label_en : c.label_ja }}
+              </label>
+            </div>
+
+            <!-- 右ペイン BX/UX -->
+            <div v-if="!cur_bey.is_cx" class="main-beyed">
+              <!-- 一覧 -->
+              <div v-if="blade_all" class="listbox input">
+                <template v-for="(lst, c) in bxux_blade_list">
+                  <!-- カテゴリーで絞り込み -->
+                  <template v-if="blade_categ.find(v => v === lst.category.value)">
+                    <!-- カテゴリー見出し -->
+                    <div>{{ is_eng ? lst.category.label_en : lst.category.label_ja }}</div>
+                    <!-- タイプで絞り込み -->
+                    <template v-for="(blade, t) in lst.list">
+                      <template v-if="blade_type.find(v => v === blade.type.value )">
+                        <input type="radio" name="bux" :id="'bux'+c+'-'+t"
+                               v-model="cur_bey.blade" :value="blade" />
+                        <label :for="'bux'+c+'-'+t">{{ blade.name(is_eng) }}</label> 
+                      </template>
+                    </template>
+                  </template>
+                </template>
+              </div>
+              <!-- 履歴 -->
+              <div v-else class="listbox input">
+                <template v-for="(x, i) in bxux_blade_used">
+                  <input type="radio" name="buxhst" :id="'buxhst'+i"
+                         v-model="cur_bey.blade" :value="x.item" />
+                  <label :for="'buxhst'+i">{{ x.item.name(is_eng) }}</label>
+                </template>
+              </div>
+            </div>
+
+            <!-- 右ペイン CX -->
+            <div v-else class="main-beyed cx-list">
+
+              <!-- ロックチップ -->
+              <h4 class="lock-chip-header">{{ is_eng ? "Lock chip" : "ロックチップ" }}</h4>
+              <!-- 一覧 -->
+              <div v-if="blade_all" class="listbox input lock-chip-list">
+                <template v-for="(x, i) in cx_chips">
+                  <input type="radio" name="lck" :id="'lck'+i"
+                         v-model="cur_bey.cx_chip" :value="x" />
+                  <label :for="'lck'+i">{{ x.name(is_eng) }}</label>
+                </template>
+              </div>
+              <!-- 履歴 -->
+              <div v-else class="listbox input lock-chip-list">
+                <template v-for="(x, i) in cx_chip_used">
+                  <input type="radio" name="lckhst" :id="'lckhst'+i"
+                         v-model="cur_bey.cx_chip" :value="x.item" />
+                  <label :for="'lckhst'+i">{{ x.item.name(is_eng) }}</label>
+                </template>
+              </div>
+
+              <!-- メインブレード -->
+              <h4 class="main-blade-header">{{ is_eng ? "Main blade" : "メインブレード" }}</h4>
+              <!-- 一覧 -->
+              <div v-if="blade_all" class="listbox input main-blade-list">
+                <template v-for="(lst, c) in cx_main_list">
+                  <!-- カテゴリーで絞り込み -->
+                  <template v-if="blade_categ.find(v => v === lst.category.value)">
+                    <!-- カテゴリー見出し -->
+                    <div>{{ is_eng ? lst.category.label_en : lst.category.label_ja }}</div>
+                    <!-- タイプで絞り込み -->
+                    <template v-for="(blade, t) in lst.list">
+                      <template v-if="blade_type.find(v => v === blade.type.value)">
+                        <input type="radio" name="cxm" :id="'cxm'+c+'-'+t"
+                               v-model="cur_bey.cx_main" :value="blade" />
+                        <label :for="'cxm'+c+'-'+t">{{ blade.name(is_eng) }}</label> 
+                      </template>
+                    </template>
+                  </template>
+                </template>
+              </div>
+              <!-- 履歴 -->
+              <div v-else class="listbox input main-blade-list">
+                <template v-for="(x, i) in cx_main_used">
+                  <input type="radio" name="cxmhst" :id="'cxmhst'+i"
+                         v-model="cur_bey.cx_main" :value="x.item" />
+                  <label :for="'cxmhst'+i">{{ x.item.name(is_eng) }}</label>
+                </template>
+              </div>
+
+              <!-- アシストブレード -->
+              <h4 class="assist-blade-header">{{ is_eng ? "Assist blade" : "アシストブレード" }}</h4>
+              <!-- 一覧 -->
+              <div v-if="blade_all" class="listbox input assist-blade-list">
+                <template v-for="(x, i) in cx_assists">
+                  <input type="radio" name="cxa" :id="'cxa'+i"
+                         v-model="cur_bey.cx_assist" :value="x" />
+                  <label :for="'cxa'+i">{{ x.symbol }} / {{ x.name(is_eng) }}</label>
+                </template>
+              </div>
+              <!-- 履歴 -->
+              <div v-else class="listbox input assist-blade-list">
+                <template v-for="(x, i) in cx_assist_used">
+                  <input type="radio" name="cxahst" :id="'cxahst'+i"
+                         v-model="cur_bey.cx_assist" :value="x.item" />
+                  <label :for="'cxahst'+i">{{ x.item.symbol }} / {{ x.item.name(is_eng) }}</label>
+                </template>
+              </div>
+
+            </div>
+          </div>
+
+          <!-------------------------------------------------------------------
+            ラチェット編集画面
+          --------------------------------------------------------------------->
+          <div v-show="page_beyed == 2" class="content-beyed page-ratchet">
+
+            <!-- 左ペイン -->
+            <div class="menu-beyed">
+              <!-- 一覧表示 -->
+              <h4>{{ is_eng ? "List" : "一覧" }}</h4>
+              <select v-model="rat_all">
+                <option :value="true">{{ is_eng ? "All" : "すべて" }}</option>
+                <option :value="false">{{ is_eng ? "History" : "履歴" }}</option>
+              </select>
+
+              <!-- 形状で絞り込み -->
+              <h4>{{ is_eng ? "Shape" : "形状" }}</h4>
+              <select v-model="rat_shape" :disabled="!rat_all">
+                <option v-for="s in rat_shapes" :value="s.value">
+                  {{ is_eng ? s.label_en : s.label_ja }}
+                </option>
+              </select>
+
+              <!-- 高さで絞り込み -->
+              <h4>{{ is_eng ? "Height" : "高さ" }}</h4>
+              <select v-model="rat_height" :disabled="!rat_all">
+                <option v-for="h in rat_heights" :value="h.value">
+                  {{ is_eng ? h.label_en : h.label_ja }}
+                </option>
+              </select>
+
+              <!-- フォーマットで絞り込み -->
+              <h4>{{ is_eng ? "Format" : "フォーマット" }}</h4>
+              <select v-model="rat_format" :disabled="!rat_all">
+                <option v-for="format in rat_formats" :value="format.value">
+                  {{ is_eng ? format.label_en : format.label_ja }}
+                </option>
+              </select>
+            </div>
+
+            <!-- 右ペイン -->
+            <div class="main-beyed">
+
+              <!-- 一覧 -->
+              <div v-if="rat_all" class="listbox input">
+                <template v-for="(lst, c) in rat_list">
+                  <!-- フォーマットで絞り込み -->
+                  <template v-if="lst.format.value & rat_format">
+                    <!-- フォーマット -->
+                    <div>{{ is_eng ? lst.format.label_en : lst.format.label_ja }}</div>
+                    <!-- 形状や高さで絞り込み -->
+                    <template v-for="(r, t) in lst.list">
+                      <template v-if="(r.shape.value & rat_shape) && (r.height.value & rat_height)">
+                        <input type="radio" name="ratlst" :id="'ratlst'+c+'-'+t"
+                               v-model="cur_bey.ratchet" :value="r" />
+                        <label :for="'ratlst'+c+'-'+t">{{ r.name }}</label> 
+                      </template>
+                    </template>
+                  </template>
+                </template>
+              </div>
+
+              <!-- 履歴 -->
+              <div v-else class="listbox input">
+                <template v-for="(x, i) in rats_used">
+                  <input type="radio" name="rathst" :id="'rathst'+i"
+                         v-model="cur_bey.ratchet" :value="x.item" />
+                  <label :for="'rathst'+i">{{ x.item.name }}</label>
+                </template>
+              </div>
+            </div>
+
+          </div>
+          <!-------------------------------------------------------------------
+            ビット編集画面
+          --------------------------------------------------------------------->
+          <div v-show="page_beyed == 3" class="content-beyed page-bit">
+
+            <!-- 左ペイン -->
+            <div class="menu-beyed">
+
+              <!-- 一覧表示 -->
+              <h4>{{ is_eng ? "List" : "一覧" }}</h4>
+              <select v-model="bit_all">
+                <option :value="true">{{ is_eng ? "All" : "すべて" }}</option>
+                <option :value="false">{{ is_eng ? "History" : "履歴" }}</option>
+              </select>
+
+              <!-- タイプで絞り込み -->
+              <h4>{{ is_eng ? "Type" : "タイプ" }}</h4>
+              <label v-for="t in types">
+                <input type="checkbox" v-model="bit_type" :value="t.value" :disabled="!bit_all" />
+                {{ is_eng ? t.label_en : t.label_ja }}
+              </label>
+
+            </div>
+
+            <!-- 右ペイン -->
+            <div class="main-beyed">
+
+              <!-- 一覧 -->
+              <div v-if="bit_all" class="listbox input">
+                <template v-for="(lst, c) in bit_list">
+                  <!-- タイプで絞り込み -->
+                  <template v-if="bit_type.find(v => v === lst.type.value )">
+                    <!-- タイプ見出し -->
+                    <div>{{ is_eng ? lst.type.label_en : lst.type.label_ja }}</div>
+                    <!-- 一覧 -->
+                    <template v-for="(bit, t) in lst.list">
+                      <input type="radio" name="bit" :id="'bit'+c+'-'+t"
+                              v-model="cur_bey.bit" :value="bit" />
+                      <label :for="'bit'+c+'-'+t">
+                        <span class="bold">{{ bit.symbol }}</span> <span class="small">&mdash; {{ bit.name(is_eng) }}</span>
+                      </label> 
+                    </template>
+                  </template>
+                </template>
+              </div>
+
+              <!-- 履歴 -->
+              <div v-else class="listbox input">
+                <template v-for="(x, i) in bits_used">
+                  <input type="radio" name="bithst" :id="'bithst'+i"
+                         v-model="cur_bey.bit" :value="x.item" />
+                  <label :for="'bithst'+i">
+                    {{ x.item.symbol }} / {{ x.item.name(is_eng) }}
+                  </label>
+                </template>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </dialog>
+
+      <!--
+      =======================================================================
+      -----------------------------------------------------------------------
+          戦績情報を表示するダイアログ
+      -----------------------------------------------------------------------
+      =======================================================================
+      -->
+      <dialog id="dlg_history" ref="dlg_history" class="dlg-frame" @click="click_dlg_history">
+        <div class="dlg-header-wrapper">
+          <div class="dlg-header">
+            <div>
+              {{ is_eng ? "Record" : "対戦成績" }}: No.{{ cur_entry.number }} / {{ cur_entry.name }}
+            </div>
+            <button @click="close_dlg_history()">&times;</button>
+          </div>
+        </div>
+        <div class="dlg-body">
+
+          <!-- 各対戦 -->
+          <template v-for="m in cur_entry.get_matches(rounds)">
+            <div v-show="m.condition() >= 10" class="match-in-history">
+
+              <!-- ヘッダ -->
+              <div class="round-in-history">
+                <div>{{ is_eng ? ("Round " + m.round) : (m.round + "回戦") }}</div>
+                <div>{{ m.get_target_position(cur_entry.id) }}</div>
+              </div>
+
+              <!-- ターゲット -->
+              <template v-for="(s, i) in m.get_target_sides(cur_entry.id)">
+                <!-- ブレーダー・ベイ情報 -->
+                <div :class="'side-in-history'+i">
+                  <div class="number-in-history">{{ s.side.number() }}</div>
+                  <div :class="{'name-in-history': true, winner: s.score >= 4}">{{ s.side.name() }}</div>
+                  <div class="bey-in-history">
+                    {{ s.side.bey.blade_name(is_eng) }}<br />
+                    {{ s.side.bey.ratchet_name() }} {{ s.side.bey.bit_name() }}
+                    <div class="finish-in-history">
+                      <div v-for="f in s.finishes" :class="f">{{ f }}</div>                 
+                    </div>
+                  </div>
+                </div>
+                <!-- スコア -->
+                <div :class="'score-in-history'+i">{{ s.score }}</div>
+              </template>
+
+              <!-- スコアのハイフン -->
+              <div class="hyphen-in-history">&minus;</div>
+            </div>
+          </template>
+        </div>
+      </dialog>
+
+    </div>
+
+    <footer>
+      Copyright 2025 <a href="https://x.com/shark_minister">@shark_minister</a>
+    </footer>
+
   </body>
+  <script src="./res/vue3.global.prod.js"></script>
+  <script src="./res/defs.js"></script>
+  <script src="./res/app.js"></script>
+  <link rel="stylesheet" type="text/css" href="./res/style.css">
 </html>
